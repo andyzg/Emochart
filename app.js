@@ -5,19 +5,21 @@ var graph = require('fbgraph');
 var app = express();
 var server = require('http').createServer(app);
 
-//Create the AlchemyAPI object
-var AlchemyAPI = require('./alchemyapi');
-var alchemyapi = new AlchemyAPI();
+//var io = require('socket.io').listen(server);
+
+var FB_KEY = require('./fb_key');
+
+var alchemyService = require('./alchemyservice');
 
 // all environments
-app.engine('dust',consolidate.dust);
 app.set('views',__dirname + '/views');
-app.set('view engine', 'dust');
+app.set('view engine', 'jade');
 app.set('port', process.env.PORT || 3000);
 app.use(express.favicon());
 app.use(express.logger('dev'));
 app.use(express.bodyParser());
 app.use(express.methodOverride());
+app.use(express.static(__dirname + "../public"));
 
 // development only
 if ('development' == app.get('env')) {
@@ -26,8 +28,8 @@ if ('development' == app.get('env')) {
 
 // this should really be in a config file!
 var conf = {
-	client_id:      '565928233514418'
-	, client_secret:  'c0d19555413804017d64253633825336'
+	client_id:        FB_KEY.APP_ID
+	, client_secret:  FB_KEY.APP_SECRET
 	, scope:          'email, user_about_me, user_birthday, user_location, publish_stream, user_status'
 	, redirect_uri:   'http://localhost:3000/auth/facebook'
 };
@@ -47,15 +49,17 @@ app.get('/auth/facebook', function(req, res) {
   		, "redirect_uri":  conf.redirect_uri
   		, "scope":         conf.scope
   	});
-
+    
     if (!req.query.error) { //checks whether a user denied the app facebook login/permissions
-    	res.redirect(authUrl);
+    	console.log("Redirecting to authentication url");
+      res.redirect(authUrl);
     } else {  //req.query.error == 'access_denied'
-    res.send('access denied');
-}
-return;
-}
+      res.send('access denied');
+    }
+    return;
+  }
 
+  console.log("Authorized, logging in");
   // code is set
   // we'll send that and get the access token
   graph.authorize({
@@ -66,16 +70,18 @@ return;
   }, function (err, facebookRes) {
   	res.redirect('/UserHasLoggedIn');
   });
-
-
 });
 
 
 // user gets sent here after being authorized
 app.get('/UserHasLoggedIn', function(req, res) {
+  console.log("Running FQL queries");
 	example(req, res);
 });
 
+//io.sockets.on('connection', function(socket) {
+//  console.log("Connected with the socket");
+//});
 
 var port = process.env.PORT || 3000;
 server.listen(port, function(){
@@ -85,13 +91,21 @@ server.listen(port, function(){
 
 
 function example(req, res) {
-  var query = "SELECT message FROM status WHERE uid = me()";
+	var output = {};
 
-  graph.fql(query, function(err, response) {
-    console.log(response); // { data: [ { name: 'Ricky Bobby' } ] }
-    res.render('example', {
-      data:response['data']
+  var query = "SELECT message FROM status WHERE uid = me()";
+ 
+  graph.fql(query, function(err, data) {
+    console.log(data); // { data: [ { name: 'Ricky Bobby' } ] }
+    res.render("index", {
+      data:data['data']
     });
   });
-
+	
+  //Start the analysis chain
+	/*alchemyService.sentiment(function(response) {
+    res.render("index", {
+      sentiment:response
+    });
+  });*/
 }

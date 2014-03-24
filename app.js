@@ -5,7 +5,7 @@ var graph = require('fbgraph');
 var app = express();
 var server = require('http').createServer(app);
 
-//var io = require('socket.io').listen(server);
+var io = require('socket.io').listen(server);
 
 var FB_KEY = require('./fb_key');
 
@@ -14,7 +14,7 @@ var alchemyService = require('./alchemyservice');
 // all environments
 app.set('views',__dirname + '/views');
 app.set('view engine', 'jade');
-app.set('port', process.env.PORT || 3000);
+app.set('port', 3000);
 app.use(express.favicon());
 app.use(express.logger('dev'));
 app.use(express.bodyParser());
@@ -79,11 +79,7 @@ app.get('/UserHasLoggedIn', function(req, res) {
 	example(req, res);
 });
 
-//io.sockets.on('connection', function(socket) {
-//  console.log("Connected with the socket");
-//});
-
-var port = process.env.PORT || 3000;
+var port = 3000;
 server.listen(port, function(){
 	console.log('Express server listening on port ' + port);
 	console.log('To view the example, point your favorite browser to: localhost:3000'); 
@@ -93,19 +89,29 @@ server.listen(port, function(){
 function example(req, res) {
 	var output = {};
 
-  var query = "SELECT message FROM status WHERE uid = me()";
+  var query = "SELECT message, time FROM status WHERE uid = me()";
  
   graph.fql(query, function(err, data) {
     console.log(data); // { data: [ { name: 'Ricky Bobby' } ] }
+    process(data);
     res.render("index", {
       data:data['data']
     });
   });
-	
-  //Start the analysis chain
-	/*alchemyService.sentiment(function(response) {
-    res.render("index", {
-      sentiment:response
-    });
-  });*/
 }
+
+function process(data) {
+  data['data'].forEach(function(status_update) {
+    alchemyService.sentiment(status_update['message'], function(score) {
+      var time = new Date(status_update['time']*1000);
+      io.sockets.emit('status', {
+        score:score,
+        time:time
+      });
+    });
+  });
+}
+
+io.sockets.on('connection', function(socket) {
+  console.log("Connected with the socket");
+});

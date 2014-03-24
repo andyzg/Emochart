@@ -12,14 +12,15 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/
+   */
 
 
-var express = require('express');
-var consolidate = require('consolidate');
+   var express = require('express');
+   var consolidate = require('consolidate');
+   var graph = require('fbgraph');
 
-var app = express();
-var server = require('http').createServer(app);
+   var app = express();
+   var server = require('http').createServer(app);
 
 //Create the AlchemyAPI object
 var AlchemyAPI = require('./alchemyapi');
@@ -37,11 +38,60 @@ app.use(express.methodOverride());
 
 // development only
 if ('development' == app.get('env')) {
-  app.use(express.errorHandler());
+	app.use(express.errorHandler());
 }
 
-app.get('/', example);
+// this should really be in a config file!
+var conf = {
+	client_id:      '565928233514418'
+	, client_secret:  'c0d19555413804017d64253633825336'
+	, scope:          'email, user_about_me, user_birthday, user_location, publish_stream, user_status'
+	, redirect_uri:   'http://localhost:3000/auth/facebook'
+};
 
+// Routes
+app.get('/', function(req, res){
+	res.redirect('/auth/facebook');
+});
+
+app.get('/auth/facebook', function(req, res) {
+
+  // we don't have a code yet
+  // so we'll redirect to the oauth dialog
+  if (!req.query.code) {
+  	var authUrl = graph.getOauthUrl({
+  		"client_id":     conf.client_id
+  		, "redirect_uri":  conf.redirect_uri
+  		, "scope":         conf.scope
+  	});
+
+    if (!req.query.error) { //checks whether a user denied the app facebook login/permissions
+    	res.redirect(authUrl);
+    } else {  //req.query.error == 'access_denied'
+    res.send('access denied');
+}
+return;
+}
+
+  // code is set
+  // we'll send that and get the access token
+  graph.authorize({
+  	"client_id":      conf.client_id
+  	, "redirect_uri":   conf.redirect_uri
+  	, "client_secret":  conf.client_secret
+  	, "code":           req.query.code
+  }, function (err, facebookRes) {
+  	res.redirect('/UserHasLoggedIn');
+  });
+
+
+});
+
+
+// user gets sent here after being authorized
+app.get('/UserHasLoggedIn', function(req, res) {
+	example(req, res);
+});
 
 
 var port = process.env.PORT || 3000;
@@ -50,10 +100,15 @@ server.listen(port, function(){
 	console.log('To view the example, point your favorite browser to: localhost:3000'); 
 });
 
-function getChart(req, res) {
-	var data = {};
-  data['keyword'] = [];
-  data['sentiment'] = [];
+
+var demo_text = 'Yesterday dumb Bob destroyed my fancy iPhone in beautiful Denver, Colorado. I guess I will have to head over to the Apple Store and buy a new one.';
+var demo_url = 'http://www.npr.org/2013/11/26/247336038/dont-stuff-the-turkey-and-other-tips-from-americas-test-kitchen';
+var demo_html = '<html><head><title>Python Demo | AlchemyAPI</title></head><body><h1>Did you know that AlchemyAPI works on HTML?</h1><p>Well, you do now.</p></body></html>';
+
+
+
+function example(req, res) {
+	var output = {};
 
 	//Start the analysis chain
 	sentiment(data);
@@ -73,4 +128,67 @@ function sentiment(output) {
 		output['sentiment'] = { html:demo_html, response:JSON.stringify(response,null,4), results:response['docSentiment'] };
 	});
   return;
+}
+
+
+function author(req, res, output) {
+	alchemyapi.author('url', demo_url, {}, function(response) {
+		output['author'] = { url:demo_url, response:JSON.stringify(response,null,4), results:response };
+		language(req, res, output);
+	});
+}
+
+
+function language(req, res, output) {
+	alchemyapi.language('text', demo_text, {}, function(response) {
+		output['language'] = { text:demo_text, response:JSON.stringify(response,null,4), results:response };
+		title(req, res, output);
+	});
+}
+
+
+function title(req, res, output) {
+	alchemyapi.title('url', demo_url, {}, function(response) {
+		output['title'] = { url:demo_url, response:JSON.stringify(response,null,4), results:response };
+		relations(req, res, output);
+	});
+}
+
+
+function relations(req, res, output) {
+	alchemyapi.relations('text', demo_text, {}, function(response) {
+		output['relations'] = { text:demo_text, response:JSON.stringify(response,null,4), results:response['relations'] };
+		category(req, res, output);
+	});
+}
+
+
+function category(req, res, output) {
+	alchemyapi.category('text', demo_text, {}, function(response) {
+		output['category'] = { text:demo_text, response:JSON.stringify(response,null,4), results:response };
+		feeds(req, res, output);
+	});
+}
+
+
+function feeds(req, res, output) {
+	alchemyapi.feeds('url', demo_url, {}, function(response) {
+		output['feeds'] = { url:demo_url, response:JSON.stringify(response,null,4), results:response['feeds'] };
+		microformats(req, res, output);
+	});
+}
+
+
+function microformats(req, res, output) {
+	alchemyapi.microformats('url', demo_url, {}, function(response) {
+		output['microformats'] = { url:demo_url, response:JSON.stringify(response,null,4), results:response['microformats'] };
+
+		var query = "SELECT message FROM status WHERE uid = me()";
+
+		graph.fql(query, function(err, res) {
+		  console.log(res); // { data: [ { name: 'Ricky Bobby' } ] }
+		});
+
+		res.render('example',output);
+	});
 }

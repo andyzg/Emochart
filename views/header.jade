@@ -1,9 +1,12 @@
 head
   title Test
   script(src="/socket.io/socket.io.js")
+  script(src="htttp://d3js.org/d3.v3.min.js")
   script(type="text/javascript").
     var socket = io.connect('http://localhost');
     socket.on('status', function(data) {
           console.log(data['score']);
           console.log(data['time']);
         });
+  script(src="/graph.js")
+  link(rel='stylesheet', href='/style.css')

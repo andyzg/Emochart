@@ -1,6 +1,8 @@
 extends layout
 
 block content
+  script(src="http://d3js.org/d3.v3.min.js")
+  script(src="/graph.js")
   h1 Test
   - each status in data
     p

@@ -12,15 +12,18 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/
+   */
 
 
 var express = require('express');
 var consolidate = require('consolidate');
+var graph = require('fbgraph');
 
 var app = express();
 var server = require('http').createServer(app);
 var io = require('socket.io').listen(server);
+
+var FB_KEY = require('./fb_key');
 
 var alchemyService = require('./alchemyservice');
 
@@ -36,10 +39,61 @@ app.use(express.static(__dirname + "../public"));
 
 // development only
 if ('development' == app.get('env')) {
-  app.use(express.errorHandler());
+	app.use(express.errorHandler());
 }
 
-app.get('/', getChart);
+// this should really be in a config file!
+var conf = {
+	client_id:        FB_KEY.APP_KEY
+	, client_secret:  FB_KEY.APP_SECRET
+	, scope:          'email, user_about_me, user_birthday, user_location, publish_stream, user_status'
+	, redirect_uri:   'http://localhost:3000/auth/facebook'
+};
+
+// Routes
+app.get('/', function(req, res){
+	res.redirect('/auth/facebook');
+});
+
+app.get('/auth/facebook', function(req, res) {
+
+  // we don't have a code yet
+  // so we'll redirect to the oauth dialog
+  if (!req.query.code) {
+  	var authUrl = graph.getOauthUrl({
+  		"client_id":     conf.client_id
+  		, "redirect_uri":  conf.redirect_uri
+  		, "scope":         conf.scope
+  	});
+    
+    if (!req.query.error) { //checks whether a user denied the app facebook login/permissions
+    	console.log("Redirecting to authentication url");
+      res.redirect(authUrl);
+    } else {  //req.query.error == 'access_denied'
+      res.send('access denied');
+    }
+    return;
+  }
+
+  console.log("Authorized, logging in");
+  // code is set
+  // we'll send that and get the access token
+  graph.authorize({
+  	"client_id":      conf.client_id
+  	, "redirect_uri":   conf.redirect_uri
+  	, "client_secret":  conf.client_secret
+  	, "code":           req.query.code
+  }, function (err, facebookRes) {
+  	res.redirect('/UserHasLoggedIn');
+  });
+});
+
+
+// user gets sent here after being authorized
+app.get('/UserHasLoggedIn', function(req, res) {
+  console.log("Running FQL queries");
+	example(req, res);
+});
 
 io.sockets.on('connection', function(socket) {
   console.log("Connected with the socket");
@@ -53,27 +107,19 @@ server.listen(port, function(){
 
 var test = "I like apples";
 
-function getChart(req, res) {
-	var data = {};
+function example(req, res) {
+	var output = {};
 
-	//Start the analysis chain
+  var query = "SELECT message FROM status WHERE uid = me()";
+ 
+  graph.fql(query, function(err, res) {
+    console.log(res); // { data: [ { name: 'Ricky Bobby' } ] }
+  });
+	
+  //Start the analysis chain
 	alchemyService.sentiment(function(response) {
     res.render("index", {
       sentiment:response
     }); 
   });
-}
-
-function keyword(output, callback) {
-	alchemyapi.keywords('text', test, { 'sentiment':1 }, function(response) {
-		output['keywords'] = response['keywords'];
-    callback();
-	});
-}
-
-function sentiment(output) {
-	alchemyapi.sentiment('html', test, {}, function(response) {
-		output['sentiment'] = response['docSentiment']['score'];
-    console.log(response['docSentiment']['score']);
-	});
 }

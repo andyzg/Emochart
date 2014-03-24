@@ -20,29 +20,30 @@ var consolidate = require('consolidate');
 
 var app = express();
 var server = require('http').createServer(app);
+var io = require('socket.io').listen(server);
 
-//Create the AlchemyAPI object
-var AlchemyAPI = require('./alchemyapi');
-var alchemyapi = new AlchemyAPI();
+var alchemyService = require('./alchemyservice');
 
 // all environments
-app.engine('dust',consolidate.dust);
 app.set('views',__dirname + '/views');
-app.set('view engine', 'dust');
+app.set('view engine', 'jade');
 app.set('port', process.env.PORT || 3000);
 app.use(express.favicon());
 app.use(express.logger('dev'));
 app.use(express.bodyParser());
 app.use(express.methodOverride());
+app.use(express.static(__dirname + "../public"));
 
 // development only
 if ('development' == app.get('env')) {
   app.use(express.errorHandler());
 }
 
-app.get('/', example);
+app.get('/', getChart);
 
-
+io.sockets.on('connection', function(socket) {
+  console.log("Connected with the socket");
+});
 
 var port = process.env.PORT || 3000;
 server.listen(port, function(){
@@ -50,27 +51,29 @@ server.listen(port, function(){
 	console.log('To view the example, point your favorite browser to: localhost:3000'); 
 });
 
+var test = "I like apples";
+
 function getChart(req, res) {
 	var data = {};
-  data['keyword'] = [];
-  data['sentiment'] = [];
 
 	//Start the analysis chain
-	sentiment(data);
-  keyword(data);
-  res.render("chart", data);
+	alchemyService.sentiment(function(response) {
+    res.render("index", {
+      sentiment:response
+    }); 
+  });
 }
 
-function keywords(output) {
-	alchemyapi.keywords('text', demo_text, { 'sentiment':1 }, function(response) {
-		output['keywords'] = { text:demo_text, response:JSON.stringify(response,null,4), results:response['keywords'] };
+function keyword(output, callback) {
+	alchemyapi.keywords('text', test, { 'sentiment':1 }, function(response) {
+		output['keywords'] = response['keywords'];
+    callback();
 	});
-  return;
 }
 
 function sentiment(output) {
-	alchemyapi.sentiment('html', demo_html, {}, function(response) {
-		output['sentiment'] = { html:demo_html, response:JSON.stringify(response,null,4), results:response['docSentiment'] };
+	alchemyapi.sentiment('html', test, {}, function(response) {
+		output['sentiment'] = response['docSentiment']['score'];
+    console.log(response['docSentiment']['score']);
 	});
-  return;
 }
